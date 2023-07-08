@@ -1,0 +1,52 @@
+[project]
+name = "emma-media-bot"
+version = "0.1.0"
+description = "Add a short description here"
+authors = [
+    { name = "mt2m10", email = "masashi_69@live.jp" }
+]
+dependencies = [
+]
+readme = "README.md"
+requires-python = ">= 3.8"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.rye]
+managed = true
+dev-dependencies = [
+    "black>=23.3.0",
+    "flake8>=5.0.4",
+    "isort>=5.12.0",
+    "pyproject-flake8>=5.0.4.post1",
+    "python-dotenv>=1.0.0",
+    "boto3>=1.26.165",
+    "mypy>=1.4.1",
+]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.black]
+line_length = 120
+
+[tool.flake8]
+max-line-length = 120
+
+[tool.mypy]
+# エラー時のメッセージを詳細表示
+show_error_context = true
+# エラー発生箇所の行数/列数を表示
+show_column_numbers = true
+# サードパーティ製モジュールの型チェックを無視
+ignore_missing_imports = true
+# 関数の引数/戻り値に型指定必須
+disallow_untyped_defs = true
+# デフォルト引数にNoneを取る場合、型アノテーションにOptional必須
+no_implicit_optional = true
+# 戻り値がAny型ではない関数の戻り値がAny型のとき警告
+warn_return_any = true
+# 冗長なキャストに警告
+warn_redundant_casts = true
