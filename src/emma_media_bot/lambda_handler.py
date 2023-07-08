@@ -1,7 +1,5 @@
 import json
 import os
-import subprocess
-import tempfile
 import urllib.request
 
 import boto3
@@ -20,21 +18,20 @@ def lambda_handler(event, context):
 
         message_id = message_event["message"]["id"]
 
-        # バイナリデータを取得
-        bin = fetch_image_bin(message_id)
+        # 画像・動画ファイルを取得する
+        content = fetch_content(message_id=message_id)
 
         if message_type == "video":
-            with tempfile.NamedTemporaryFile(suffix=".jpg") as temp_preview_image:
-                # プレビュー画像を作成する
-                create_preview_image(bin, temp_preview_image)
+            # プレビュー画像を取得する
+            preview_content = fetch_preview_content(message_id=message_id)
 
-                # プレビュー画像をS3にアップロード
-                preview_filename = os.path.join("preview", message_id)
-                preview_image_url = upload_s3(bin=temp_preview_image.read(), filename=preview_filename)
+            # プレビュー画像をS3にアップロード
+            preview_filename = os.path.join("preview", message_id)
+            preview_image_url = upload_s3(bin=preview_content, filename=preview_filename)
 
         # S3にアップロード
         original_filename = os.path.join("original", message_id)
-        media_url = upload_s3(bin=bin, filename=original_filename)
+        media_url = upload_s3(bin=content, filename=original_filename)
 
         broadcast_messages.append(
             {
@@ -50,8 +47,19 @@ def lambda_handler(event, context):
     return {"statusCode": 200, "body": json.dumps("Hello from Lambda!")}
 
 
-def fetch_image_bin(message_id: str) -> bytes:
+def fetch_content(message_id: str) -> bytes:
     url = f"https://api-data.line.me/v2/bot/message/{message_id}/content"
+    headers = {
+        "Content-Type": "application/json; charset=UTF-8",
+        "Authorization": f"Bearer {os.environ['CHANNEL_ACCESS_TOKEN']}",
+    }
+    req = urllib.request.Request(url, method="GET", headers=headers)
+    with urllib.request.urlopen(req) as res:
+        return res.read()
+
+
+def fetch_preview_content(message_id: str) -> bytes:
+    url = f"https://api-data.line.me/v2/bot/message/{message_id}/content/preview"
     headers = {
         "Content-Type": "application/json; charset=UTF-8",
         "Authorization": f"Bearer {os.environ['CHANNEL_ACCESS_TOKEN']}",
@@ -83,27 +91,3 @@ def boardcast(messages: list) -> None:
     }
     req = urllib.request.Request(url, data=json.dumps(body).encode("utf-8"), method="POST", headers=headers)
     urllib.request.urlopen(req)
-
-
-def create_preview_image(video_bin: bytes, temp_preview_file: tempfile._TemporaryFileWrapper) -> None:
-    with tempfile.NamedTemporaryFile(suffix=".mp4") as temp_video:
-        temp_video.write(video_bin)
-        temp_video.seek(0)
-
-        # ffmpegコマンドの実行
-        command = [
-            "ffmpeg",
-            "-y",
-            "-ss",
-            "0",
-            "-i",
-            temp_video.name,
-            "-vframes",
-            "1",
-            "-q:v",
-            "2",
-            temp_preview_file.name,
-        ]
-        subprocess.call(command)
-
-        temp_preview_file.seek(0)
