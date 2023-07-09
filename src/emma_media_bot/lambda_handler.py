@@ -1,4 +1,5 @@
 import json
+import mimetypes
 import os
 import urllib.request
 
@@ -18,26 +19,14 @@ def lambda_handler(event, context):
 
         message_id = message_event["message"]["id"]
 
-        # 画像・動画ファイルを取得する
-        content = fetch_content(message_id=message_id)
-
-        if message_type == "video":
-            # プレビュー画像を取得する
-            preview_content = fetch_preview_content(message_id=message_id)
-
-            # プレビュー画像をS3にアップロード
-            preview_filename = os.path.join("preview", message_id)
-            preview_image_url = upload_s3(bin=preview_content, filename=preview_filename)
-
-        # S3にアップロード
-        original_filename = os.path.join("original", message_id)
-        media_url = upload_s3(bin=content, filename=original_filename)
+        media_url = create_public_url(message_id=message_id)
+        preview_image_url = create_public_url(message_id=message_id, type="preview")
 
         broadcast_messages.append(
             {
                 "type": message_type,
                 "originalContentUrl": media_url,
-                "previewImageUrl": media_url if message_type == "image" else preview_image_url,
+                "previewImageUrl": preview_image_url,
             }
         )
 
@@ -47,7 +36,26 @@ def lambda_handler(event, context):
     return {"statusCode": 200, "body": json.dumps("Hello from Lambda!")}
 
 
-def fetch_content(message_id: str) -> bytes:
+def create_public_url(message_id: str, type: str = "original") -> str:
+    if type not in ["original", "preview"]:
+        raise ValueError(f"unsupported type: {type}")
+
+    # 画像・動画ファイルを取得する
+    fetch_func = fetch_content if type == "original" else fetch_preview_content
+    content, content_type = fetch_func(message_id=message_id)
+
+    # S3にアップロード
+    ext = mimetypes.guess_extension(content_type)
+    if ext is None:
+        ext = ""
+
+    upload_path = os.path.join(type, f"{message_id}{ext}")
+    public_url = upload_s3(bin=content, filename=upload_path)
+
+    return public_url
+
+
+def fetch_content(message_id: str) -> tuple[bytes, str]:
     url = f"https://api-data.line.me/v2/bot/message/{message_id}/content"
     headers = {
         "Content-Type": "application/json; charset=UTF-8",
@@ -55,10 +63,11 @@ def fetch_content(message_id: str) -> bytes:
     }
     req = urllib.request.Request(url, method="GET", headers=headers)
     with urllib.request.urlopen(req) as res:
-        return res.read()
+        headers = res.info()
+        return res.read(), headers["Content-Type"]
 
 
-def fetch_preview_content(message_id: str) -> bytes:
+def fetch_preview_content(message_id: str) -> tuple[bytes, str]:
     url = f"https://api-data.line.me/v2/bot/message/{message_id}/content/preview"
     headers = {
         "Content-Type": "application/json; charset=UTF-8",
@@ -66,7 +75,8 @@ def fetch_preview_content(message_id: str) -> bytes:
     }
     req = urllib.request.Request(url, method="GET", headers=headers)
     with urllib.request.urlopen(req) as res:
-        return res.read()
+        headers = res.info()
+        return res.read(), headers["Content-Type"]
 
 
 def upload_s3(bin: bytes, filename: str) -> str:
